@@ -1,24 +1,29 @@
 import math
 from abc import ABCMeta, abstractmethod
 from collections import Iterable
+# from __future__ import annotations
 
-from typing import TypeVar, Callable, Any, Generic
+from typing import TypeVar, Callable, Generic, Any
 
-N = TypeVar('N', int, float)
+N = TypeVar('N', int, float)  # Number
 
-A = TypeVar('A')
+A = TypeVar('A')  # Action
 
-D = TypeVar('D')
+D = TypeVar('D')  # Node
 
-S = TypeVar('S')
+S = TypeVar('S')  # State
 
-T = TypeVar('T', Callable[[A], D], Callable[[A, D], D]) #...
+C = TypeVar('C')  # Configuration
 
-def _order(i: int, j: int) -> tuple[int, int]:
+
+# T = TypeVar('T', Callable[[A], D], Callable[[A, D], D]) #...
+
+def _order(i: int, j: int) -> tuple:
     if i < j: return i, j
     else: return j, i
 
-class AState(Generic[S], metaclass=ABCMeta):
+
+class AState(Generic[S, C], metaclass=ABCMeta):
 
     @abstractmethod
     def __lt__(self, other) -> bool:
@@ -53,7 +58,14 @@ class AState(Generic[S], metaclass=ABCMeta):
         pass
 
 
-class AAction(Generic[A], metaclass=ABCMeta):
+class AAction(Generic[A, S], metaclass=ABCMeta):
+
+    @abstractmethod
+    def __str__(self) -> str:
+        pass
+
+
+class AEdge(Generic[D], metaclass=ABCMeta):
 
     @abstractmethod
     def __str__(self) -> str:
@@ -155,32 +167,44 @@ class ANode(Generic[D], metaclass=ABCMeta):
         pass
 
 
-class DelegatingState(AState[S]):
-    configuration: D
+class DelegatingState(AState[S, C]):
+    configuration: C
 
-    def __init__(self, configuration: S):
+    def __init__(self, configuration: C, *args, **kwargs):
         self.configuration = configuration
 
     def __str__(self) -> str:
         return self.configuration.__str__()
 
     def __lt__(self, other) -> bool:
-        return self.configuration.__lt__(other.state)
+        if isinstance(other, DelegatingState):
+            return self.configuration.__lt__(other.configuration)
+        return self.configuration.__lt__(other)
 
     def __le__(self, other) -> bool:
-        return self.configuration.__le__(other.state)
+        if isinstance(other, DelegatingState):
+            return self.configuration.__le__(other.configuration)
+        return self.configuration.__le__(other)
 
     def __eq__(self, other) -> bool:
-        return self.configuration.__eq__(other.state)
+        if isinstance(other, DelegatingState):
+            return self.configuration.__eq__(other.configuration)
+        return self.configuration.__eq__(other)
 
     def __ne__(self, other) -> bool:
-        return self.configuration.__ne__(other.state)
+        if isinstance(other, DelegatingState):
+            return self.configuration.__ne__(other.configuration)
+        return self.configuration.__ne__(other)
 
     def __gt__(self, other) -> bool:
-        return self.configuration.__gt__(other.state)
+        if isinstance(other, DelegatingState):
+            return self.configuration.__gt__(other.configuration)
+        return self.configuration.__gt__(other)
 
     def __ge__(self, other) -> bool:
-        return self.configuration.__ge__(other.state)
+        if isinstance(other, DelegatingState):
+            return self.configuration.__ge__(other.configuration)
+        return self.configuration.__ge__(other)
 
     def __getitem__(self, key):
         if hasattr(self.configuration, "__getitem__") and callable(getattr(self.configuration, "__getitem__")):
@@ -190,10 +214,10 @@ class DelegatingState(AState[S]):
         return None
 
 
-class StringState(DelegatingState[str]):
+class StringState(DelegatingState[S, str]):
     marked: int
 
-    def __init__(self, configuration: str, marked: int = None):
+    def __init__(self, configuration: str, marked: int = None, *args, **kwargs):
         super().__init__(configuration)
         self.marked = marked
 
@@ -221,11 +245,14 @@ class StringState(DelegatingState[str]):
                + self.configuration[min_i] + self.configuration[max_i + 1:]
 
 
-class CharGrid(StringState):
+IntPair = TypeVar('IntPair', int, tuple)
+
+
+class CharGrid(StringState[S]):
     _rows: int
     _cols: int
 
-    def __init__(self, configuration: str, rows: int = 0, cols: int = 0, marked: int = None):
+    def __init__(self, configuration: str, rows: int = 0, cols: int = 0, marked: int = None, *args, **kwargs):
         super().__init__(configuration, marked)
 
         if rows > 0 and cols > 0 and len(configuration) == rows * cols:
@@ -248,7 +275,7 @@ class CharGrid(StringState):
             raise AttributeError(configuration, rows, cols)
 
     def __getitem__(self, key):
-        if type(key) is tuple and len(key) == 2:
+        if isinstance(key, tuple) and len(key) == 2:
             key: tuple
             return self.get(*key)
         return super().__getitem__(key)
@@ -259,15 +286,20 @@ class CharGrid(StringState):
             string += self.get_row(i) + '\n'
         return string
 
-    def coord(self, i: int) -> tuple[int, int]:
-        if i > self._rows * self._cols - 1: raise IndexError(i)
+    def coord(self, i: int) -> tuple:
+        if i > self._rows * self._cols: raise IndexError(i)
         return i // self._cols, i % self._cols
 
     def _flat(self, i: int, j: int) -> int:
+        if i == self._rows+1 and j == 0: return self._rows*self._cols
         if i > self._rows or j > self._cols: raise IndexError(i, j)
         return i * self._cols + j
 
-    def get(self, i: int, j: int) -> str:
+    def get(self, i: IntPair, j: int = None) -> str:
+        if isinstance(i, tuple):
+            return self.configuration[self._flat(*i)]
+        if j is None:
+            return self.configuration[i]
         return self.configuration[self._flat(i, j)]
 
     def get_row(self, i: int) -> str:
@@ -279,161 +311,185 @@ class CharGrid(StringState):
             string += self.configuration[self._flat(i, j)]
         return string
 
-    def swap(self, i, j=None) -> str:
-        if type(i) is tuple:
+    def swap(self, i: IntPair, j: IntPair = None) -> str:
+        if j is not None and isinstance(j, tuple):
+            j: tuple
+            j: int = self._flat(*j)
+        if isinstance(i, tuple):
             i: tuple
-            if type(j) is tuple:
-                j: tuple
-                return super().swap(self._flat(*i), self._flat(*j))
+            if j is None:
+                return super().swap(*i)
             return super().swap(self._flat(*i), j)
         return super().swap(i, j)
 
-class Action(AAction[A]):
-    name: str
-    cost: N
-    transform: Callable #further hints
-    target: A
-    result: A
 
-    def __init__(self, name: str, cost: N = 1, transform: Callable = None, target: A = None, result: A = False):
-        self.name = name
+class Edge(AEdge[D]):
+    cost: N
+    source: D
+    result: D
+
+    def __init__(self, cost: N = 1, source: D = None, result: D = None, reversible: bool = False, *args, **kwargs):
         self.cost = cost
 
-        if result and transform: raise AttributeError(transform, result)
-
-        self.transform = transform
-
-        self.target = target
+        self.source = source
         self.result = result
+        self.reversible = reversible
 
     def __str__(self) -> str:
-        string: str = self.name
-
-        if self.target or self.cost != 1 or self.result:
-            string += ":"
-
-        if self.transform: string += " ." + str(self.transform) + "()"
-        if self.target: string += " " + self.target.name() ## Clean this name stuff up
-        if self.cost != 1: string += f" -{self.cost}->"
+        string: str = ""
+        if self.source: string += " " + self.source.name()  ## Clean this name stuff up
+        if self.reversible: string += f" <-{self.cost}->"
+        else: string += f" -{self.cost}->"
         if self.result: string += " " + self.result.name()
 
         return string
 
     def __int__(self) -> int:
-        if type(self.cost) is int: return self.cost
+        if isinstance(self.cost, int): return self.cost
         return int(self.cost)
 
     def __float__(self) -> float:
-        if type(self.cost) is float: return self.cost
+        if isinstance(self.cost, float): return self.cost
         return float(self.cost)
 
     def __lt__(self, other) -> bool:
-        if type(self.cost) is int:
+        if isinstance(self.cost, int):
             return self.cost < int(other)
         return self.cost < float(other)
 
     def __le__(self, other) -> bool:
-        if type(self.cost) is int:
+        if isinstance(self.cost, int):
             return self.cost <= int(other)
         return self.cost <= float(other)
 
     def __eq__(self, other) -> bool:
-        if type(self.cost) is int:
+        if isinstance(self.cost, int):
             return self.cost == int(other)
         return self.cost == float(other)
 
     def __ne__(self, other) -> bool:
-        if type(self.cost) is int:
+        if isinstance(self.cost, int):
             return self.cost != int(other)
         return self.cost != float(other)
 
     def __gt__(self, other) -> bool:
-        if type(self.cost) is int:
+        if isinstance(self.cost, int):
             return self.cost > int(other)
         return self.cost > float(other)
 
     def __ge__(self, other) -> bool:
-        if type(self.cost) is int:
+        if isinstance(self.cost, int):
             return self.cost >= int(other)
         return self.cost >= float(other)
 
 
+class Action(Edge[D], AAction['Action', S]):
+    name: str
+    transform: Callable  # further hints
+
+    def __init__(self, name: str, cost: N = 1, transform: Callable = None, source: D = None, result: D = None,
+                 reversible: bool = False, *args, **kwargs):
+        super().__init__(cost=cost, source=source, result=result)
+        self.name = name
+
+        # if result and transform: raise AttributeError(transform, result)
+
+        self.transform = transform
+
+    def __str__(self) -> str:
+        string: str = self.name
+
+        if self.source or self.cost != 1 or self.result: string += ":"
+
+        if self.transform: string += " ." + str(self.transform) + "()"
+        if self.source: string += " " + self.source.name()  ## Clean this name stuff up
+        if self.cost != 1:
+            if self.reversible: string += f" <-{self.cost}->"
+            else: string += f" -{self.cost}->"
+        else:
+            if self.reversible: string += f" <--->"
+            else: string += f" --->"
+        if self.result: string += " " + self.result.name()
+
+        return string
+
+
 class CostNode(ANode[D], metaclass=ABCMeta):
-    action: Action[D]
     cost: N
-    _actions: set[Action[D]]
-    _children: set[D]
+    _edges: set
+    _children: set
     _expanded: bool
     _examined: bool
 
-    def __init__(self, parent: D = None, action: Action[D] = None, cost: N = 0):
+    def __init__(self, parent: D = None, edge: Action[S, D] = None, cost: N = 0):
         super().__init__(parent)
 
-        self.action = action
+        self.action = edge
         self.cost = cost
 
-        self._actions = set()
+        self._edges = set()
         self._children = set()
 
         self._expanded = False
         self._examined = False
 
     def __int__(self) -> int:
-        if type(self.cost) is int: return self.cost
+        if isinstance(self.cost, int): return self.cost
         return int(self.cost)
 
     def __float__(self) -> float:
-        if type(self.cost) is float: return self.cost
+        if isinstance(self.cost, float): return self.cost
         return float(self.cost)
 
     def __lt__(self, other) -> bool:
-        if type(self.cost) is int:
+        if isinstance(self.cost, int):
             return self.cost < int(other)
         return self.cost < float(other)
 
     def __le__(self, other) -> bool:
-        if type(self.cost) is int:
+        if isinstance(self.cost, int):
             return self.cost <= int(other)
         return self.cost <= float(other)
 
     def __eq__(self, other) -> bool:
-        if type(self.cost) is int:
+        if isinstance(self.cost, int):
             return self.cost == int(other)
         return self.cost == float(other)
 
     def __ne__(self, other) -> bool:
-        if type(self.cost) is int:
+        if isinstance(self.cost, int):
             return self.cost != int(other)
         return self.cost != float(other)
 
     def __gt__(self, other) -> bool:
-        if type(self.cost) is int:
+        if isinstance(self.cost, int):
             return self.cost > int(other)
         return self.cost > float(other)
 
     def __ge__(self, other) -> bool:
-        if type(self.cost) is int:
+        if isinstance(self.cost, int):
             return self.cost >= int(other)
         return self.cost >= float(other)
 
-    def __getitem__(self, key: Action):
-        if type(key) is Action: return self.transition(key)
+    def __getitem__(self, key: Action[S, D]):
+        if isinstance(key, Action): return self.transition(key)
         return None
 
 
-class StateNode(CostNode[D], metaclass=ABCMeta):
-    state: AState[S] #????
-    _transitions: dict[Action[D], Any] # Further type hints
+class StateNode(CostNode[D], Generic[S, D], metaclass=ABCMeta):
+    action: Action[S, D]
+    state: S
+    _transitions: dict  # Further type hints?
 
-    def __init__(self, state: AState[S], parent: CostNode = None, action: Action = None, cost: N = 0,
-                 transitions: dict = None):
-        super().__init__(parent, action, cost)
+    def __init__(self, state: S, parent: D = None, edge: Action[S, D] = None, cost: N = 0,
+                 transitions: dict = None, *args, **kwargs):
+        super().__init__(parent, edge, cost)
 
         self.state = state
 
         self._transitions = transitions
 
-    def expand(self, ignore: Iterable[D]=None) -> set[D]:
+    def expand(self, ignore: Iterable = None) -> set:
         if not self._expanded:
             if ignore:
                 self._children = {x for x in self._generate_children() if x not in ignore}
@@ -442,7 +498,7 @@ class StateNode(CostNode[D], metaclass=ABCMeta):
             self._expanded = True
         return self._children
 
-    def actions(self) -> set[Action[D]]:
+    def actions(self) -> set:
         if not self._examined:
             self._actions = self._generate_actions()
             self._examined = True
@@ -450,20 +506,20 @@ class StateNode(CostNode[D], metaclass=ABCMeta):
 
     # May need to override
 
-    def __getitem__(self, key):
-        if type(key) is Action: return super().__getitem__(key)
+    def __getitem__(self, key: Any):
+        if isinstance(key, Action): return super().__getitem__(key)
         return self.state.__getitem__(key)
 
     def __str__(self) -> str:
         return self.state.__str__()
 
-    def _generate_children(self) -> set[D]:
+    def _generate_children(self) -> set:
         return {self.transition(x) for x in self.actions()}
 
     def name(self) -> str:
         return self.state.__str__()
 
-    def transition(self, action: Action[D]) -> D:
+    def transition(self, action: Action[S, D]) -> D:
         if self._transitions:
             if self._transitions[action]:
                 if callable(self._transitions[action]):

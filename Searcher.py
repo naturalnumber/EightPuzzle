@@ -1,4 +1,4 @@
-from Framework import ANode
+from framework import ANode
 
 
 class Searcher:

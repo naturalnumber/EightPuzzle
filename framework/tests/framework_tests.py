@@ -1,6 +1,6 @@
 import unittest
 
-from Framework import *
+from framework import *
 
 
 # noinspection DuplicatedCode
