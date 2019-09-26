@@ -1,12 +1,24 @@
 import math
 from abc import ABCMeta, abstractmethod
+from collections import Iterable
 
-from typing import TypeVar, Callable, Any
+from typing import TypeVar, Callable, Any, Generic
 
 N = TypeVar('N', int, float)
 
+A = TypeVar('A')
 
-class AState(object, metaclass=ABCMeta):
+D = TypeVar('D')
+
+S = TypeVar('S')
+
+T = TypeVar('T', Callable[[A], D], Callable[[A, D], D]) #...
+
+def _order(i: int, j: int) -> tuple[int, int]:
+    if i < j: return i, j
+    else: return j, i
+
+class AState(Generic[S], metaclass=ABCMeta):
 
     @abstractmethod
     def __lt__(self, other) -> bool:
@@ -41,7 +53,7 @@ class AState(object, metaclass=ABCMeta):
         pass
 
 
-class AAction(object, metaclass=ABCMeta):
+class AAction(Generic[A], metaclass=ABCMeta):
 
     @abstractmethod
     def __str__(self) -> str:
@@ -80,8 +92,10 @@ class AAction(object, metaclass=ABCMeta):
         pass
 
 
-class ANode(object, metaclass=ABCMeta):
-    def __init__(self, parent: object = False):
+class ANode(Generic[D], metaclass=ABCMeta):
+    parent: D
+
+    def __init__(self, parent: D = False):
         self.parent = parent
 
     @abstractmethod
@@ -141,9 +155,10 @@ class ANode(object, metaclass=ABCMeta):
         pass
 
 
-class DelegatingState(AState):
+class DelegatingState(AState[S]):
+    configuration: D
 
-    def __init__(self, configuration):
+    def __init__(self, configuration: S):
         self.configuration = configuration
 
     def __str__(self) -> str:
@@ -175,8 +190,7 @@ class DelegatingState(AState):
         return None
 
 
-class StringState(DelegatingState):
-    configuration: str
+class StringState(DelegatingState[str]):
     marked: int
 
     def __init__(self, configuration: str, marked: int = None):
@@ -192,11 +206,6 @@ class StringState(DelegatingState):
     def __getitem__(self, key):
         return self.configuration.__getitem__(key)
 
-    @staticmethod
-    def _order(i: int, j: int) -> tuple[int, int]:
-        if i < j: return i, j
-        else: return j, i
-
     def swap(self, i: int, j: int = None) -> str:
         if j is None:
             if self.marked is not None:
@@ -206,7 +215,7 @@ class StringState(DelegatingState):
 
         if i == j: return self.configuration
 
-        min_i, max_i = StringState._order(i, j)
+        min_i, max_i = _order(i, j)
 
         return self.configuration[:min_i] + self.configuration[max_i] + self.configuration[min_i + 1:max_i] \
                + self.configuration[min_i] + self.configuration[max_i + 1:]
@@ -279,16 +288,14 @@ class CharGrid(StringState):
             return super().swap(self._flat(*i), j)
         return super().swap(i, j)
 
-
-class Action(AAction):
+class Action(AAction[A]):
     name: str
     cost: N
-    transform: Callable
-    target: ANode
-    result: ANode
+    transform: Callable #further hints
+    target: A
+    result: A
 
-    def __init__(self, name: str, cost: N = 1, transform: Callable = None, target: ANode = None,
-                 result: ANode = False):
+    def __init__(self, name: str, cost: N = 1, transform: Callable = None, target: A = None, result: A = False):
         self.name = name
         self.cost = cost
 
@@ -306,7 +313,7 @@ class Action(AAction):
             string += ":"
 
         if self.transform: string += " ." + str(self.transform) + "()"
-        if self.target: string += " " + self.target.name()
+        if self.target: string += " " + self.target.name() ## Clean this name stuff up
         if self.cost != 1: string += f" -{self.cost}->"
         if self.result: string += " " + self.result.name()
 
@@ -351,17 +358,15 @@ class Action(AAction):
         return self.cost >= float(other)
 
 
-class CostNode(ANode, metaclass=ABCMeta):
-    action: Action
+class CostNode(ANode[D], metaclass=ABCMeta):
+    action: Action[D]
     cost: N
-    _actions: set[Action]
-    _children: set[ANode]
+    _actions: set[Action[D]]
+    _children: set[D]
     _expanded: bool
     _examined: bool
 
-    parent: ANode
-
-    def __init__(self, parent: ANode = None, action: Action = None, cost: N = 0):
+    def __init__(self, parent: D = None, action: Action[D] = None, cost: N = 0):
         super().__init__(parent)
 
         self.action = action
@@ -416,13 +421,11 @@ class CostNode(ANode, metaclass=ABCMeta):
         return None
 
 
-class StateNode(CostNode, metaclass=ABCMeta):
-    state: AState
-    _transitions: dict[Action, Any]
+class StateNode(CostNode[D], metaclass=ABCMeta):
+    state: AState[S] #????
+    _transitions: dict[Action[D], Any] # Further type hints
 
-    parent: CostNode
-
-    def __init__(self, state: AState, parent: CostNode = None, action: Action = None, cost: N = 0,
+    def __init__(self, state: AState[S], parent: CostNode = None, action: Action = None, cost: N = 0,
                  transitions: dict = None):
         super().__init__(parent, action, cost)
 
@@ -430,7 +433,7 @@ class StateNode(CostNode, metaclass=ABCMeta):
 
         self._transitions = transitions
 
-    def expand(self, ignore=None) -> set:
+    def expand(self, ignore: Iterable[D]=None) -> set[D]:
         if not self._expanded:
             if ignore:
                 self._children = {x for x in self._generate_children() if x not in ignore}
@@ -439,7 +442,7 @@ class StateNode(CostNode, metaclass=ABCMeta):
             self._expanded = True
         return self._children
 
-    def actions(self) -> set:
+    def actions(self) -> set[Action[D]]:
         if not self._examined:
             self._actions = self._generate_actions()
             self._examined = True
@@ -454,13 +457,13 @@ class StateNode(CostNode, metaclass=ABCMeta):
     def __str__(self) -> str:
         return self.state.__str__()
 
-    def _generate_children(self) -> set:
+    def _generate_children(self) -> set[D]:
         return {self.transition(x) for x in self.actions()}
 
     def name(self) -> str:
         return self.state.__str__()
 
-    def transition(self, action: Action) -> ANode:
+    def transition(self, action: Action[D]) -> D:
         if self._transitions:
             if self._transitions[action]:
                 if callable(self._transitions[action]):
