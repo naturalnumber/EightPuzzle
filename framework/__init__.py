@@ -24,6 +24,7 @@ def _order(i: int, j: int) -> tuple:
 
 
 class AState(Generic[S, C], metaclass=ABCMeta):
+    debug: bool = False
 
     @abstractmethod
     def __lt__(self, other) -> bool:
@@ -57,8 +58,13 @@ class AState(Generic[S, C], metaclass=ABCMeta):
     def __str__(self) -> str:
         pass
 
+    @abstractmethod
+    def __hash__(self):
+        pass
+
 
 class AAction(Generic[A, S], metaclass=ABCMeta):
+    debug: bool = False
 
     @abstractmethod
     def __str__(self) -> str:
@@ -66,6 +72,7 @@ class AAction(Generic[A, S], metaclass=ABCMeta):
 
 
 class AEdge(Generic[D], metaclass=ABCMeta):
+    debug: bool = False
 
     @abstractmethod
     def __str__(self) -> str:
@@ -103,8 +110,13 @@ class AEdge(Generic[D], metaclass=ABCMeta):
     def __ge__(self, other) -> bool:
         pass
 
+    @abstractmethod
+    def __hash__(self):
+        pass
+
 
 class ANode(Generic[D], metaclass=ABCMeta):
+    debug: bool = False
     parent: D
 
     def __init__(self, parent: D = False):
@@ -147,15 +159,19 @@ class ANode(Generic[D], metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def expand(self, ignore) -> set:
+    def __hash__(self):
         pass
 
     @abstractmethod
-    def actions(self) -> set:
+    def expand(self, ignore) -> list:
         pass
 
     @abstractmethod
-    def name(self) -> str:
+    def actions(self) -> list:
+        pass
+
+    @abstractmethod
+    def describe(self) -> str:
         pass
 
     @abstractmethod
@@ -213,6 +229,9 @@ class DelegatingState(AState[S, C]):
             return getattr(self.configuration, key)
         return None
 
+    def __hash__(self):
+        return hash(self.configuration)
+
 
 class StringState(DelegatingState[S, str]):
     marked: int
@@ -231,6 +250,8 @@ class StringState(DelegatingState[S, str]):
         return self.configuration.__getitem__(key)
 
     def swap(self, i: int, j: int = None) -> str:
+        if self.debug: print(f"StringState.swap({i}, {j})")
+
         if j is None:
             if self.marked is not None:
                 j = self.marked
@@ -291,7 +312,7 @@ class CharGrid(StringState[S]):
         return i // self._cols, i % self._cols
 
     def _flat(self, i: int, j: int) -> int:
-        if i == self._rows+1 and j == 0: return self._rows*self._cols
+        if i == self._rows + 1 and j == 0: return self._rows * self._cols
         if i > self._rows or j > self._cols: raise IndexError(i, j)
         return i * self._cols + j
 
@@ -312,13 +333,18 @@ class CharGrid(StringState[S]):
         return string
 
     def swap(self, i: IntPair, j: IntPair = None) -> str:
+        if self.debug: print(f"CharGrid.swap({i}, {j})")
         if j is not None and isinstance(j, tuple):
             j: tuple
             j: int = self._flat(*j)
+            if self.debug: print(f"\tj -> {j}")
         if isinstance(i, tuple):
             i: tuple
             if j is None:
-                return super().swap(*i)
+                j: int = self.marked
+                # if self.debug: print(f"\ti, j -> {i}")
+                # return super().swap(*i)
+            if self.debug: print(f"\ti, j -> {self._flat(*i)}, {j}")
             return super().swap(self._flat(*i), j)
         return super().swap(i, j)
 
@@ -337,10 +363,10 @@ class Edge(AEdge[D]):
 
     def __str__(self) -> str:
         string: str = ""
-        if self.source: string += " " + self.source.name()  ## Clean this name stuff up
+        if self.source: string += " " + self.source.describe()  ## Clean this name stuff up
         if self.reversible: string += f" <-{self.cost}->"
         else: string += f" -{self.cost}->"
-        if self.result: string += " " + self.result.name()
+        if self.result: string += " " + self.result.describe()
 
         return string
 
@@ -382,6 +408,9 @@ class Edge(AEdge[D]):
             return self.cost >= int(other)
         return self.cost >= float(other)
 
+    def __hash__(self):
+        return hash((self.cost, self.source, self.result, self.reversible))
+
 
 class Action(Edge[D], AAction['Action', S]):
     name: str
@@ -396,28 +425,47 @@ class Action(Edge[D], AAction['Action', S]):
 
         self.transform = transform
 
+    @staticmethod
+    def _parse_transform(trans):
+        tokens = str(trans).split(" ")
+
+        i = 0
+
+        while tokens[i] in ["<bound", "method"]:
+            i += 1
+        class_name, method_name = tokens[i].split(".")
+        context_name, _ = tokens[i + 2][1:].split(".")
+
+        return context_name, class_name, method_name
+
     def __str__(self) -> str:
         string: str = self.name
 
         if self.source or self.cost != 1 or self.result: string += ":"
 
-        if self.transform: string += " ." + str(self.transform) + "()"
-        if self.source: string += " " + self.source.name()  ## Clean this name stuff up
+        if self.transform:
+            context_name, class_name, method_name = self._parse_transform(self.transform)
+            string += " " + class_name + "." + method_name + "()"
+        if self.source: string += " on " + self.source.describe()  ## Clean this name stuff up
         if self.cost != 1:
             if self.reversible: string += f" <-{self.cost}->"
             else: string += f" -{self.cost}->"
         else:
             if self.reversible: string += f" <--->"
             else: string += f" --->"
-        if self.result: string += " " + self.result.name()
+        if self.result: string += " " + self.result.describe()
+        else: string += " ?"
 
         return string
+
+    def __hash__(self):
+        return hash(self.name)
 
 
 class CostNode(ANode[D], metaclass=ABCMeta):
     cost: N
-    _edges: set
-    _children: set
+    _edges: list
+    _children: list
     _expanded: bool
     _examined: bool
 
@@ -427,8 +475,8 @@ class CostNode(ANode[D], metaclass=ABCMeta):
         self.action = edge
         self.cost = cost
 
-        self._edges = set()
-        self._children = set()
+        self._edges = []
+        self._children = []
 
         self._expanded = False
         self._examined = False
@@ -475,6 +523,9 @@ class CostNode(ANode[D], metaclass=ABCMeta):
         if isinstance(key, Action): return self.transition(key)
         return None
 
+    def __hash__(self):
+        return hash((self.parent, self.action, self.cost))
+
 
 class StateNode(CostNode[D], Generic[S, D], metaclass=ABCMeta):
     action: Action[S, D]
@@ -489,20 +540,29 @@ class StateNode(CostNode[D], Generic[S, D], metaclass=ABCMeta):
 
         self._transitions = transitions
 
-    def expand(self, ignore: Iterable = None) -> set:
+    def expand(self, ignore: Iterable = None) -> list:
+        if self.debug: print(f"StateNode.expand({ignore})")
         if not self._expanded:
-            if ignore:
-                self._children = {x for x in self._generate_children() if x not in ignore}
+            if ignore is not None:
+                if self.debug: print(f"\tExpanding without {ignore}")
+                x:D
+                self._children = [x for x in self._generate_children() if x.state not in ignore]
             else:
+                if self.debug: print(f"\tExpanding...")
                 self._children = self._generate_children()
             self._expanded = True
         return self._children
 
-    def actions(self) -> set:
+    def actions(self) -> list:
+        if self.debug: print(f"StateNode.actions()")
         if not self._examined:
-            self._actions = self._generate_actions()
+            if self.debug: print(f"\tExamining...")
+            self._edges = self._generate_actions()
             self._examined = True
-        return self._actions
+        return self._edges
+
+    def __hash__(self):
+        return hash(hash(self.state))
 
     # May need to override
 
@@ -513,22 +573,28 @@ class StateNode(CostNode[D], Generic[S, D], metaclass=ABCMeta):
     def __str__(self) -> str:
         return self.state.__str__()
 
-    def _generate_children(self) -> set:
-        return {self.transition(x) for x in self.actions()}
+    def _generate_children(self) -> list:
+        if self.debug: print(f"StateNode._generate_children()")
+        return [self.transition(x) for x in self.actions()]
 
-    def name(self) -> str:
+    def describe(self) -> str:
         return self.state.__str__()
 
     def transition(self, action: Action[S, D]) -> D:
+        if self.debug: print(f"StateNode.transition({action.name})")
         if self._transitions:
             if self._transitions[action]:
                 if callable(self._transitions[action]):
-                    return self._transitions[action](source=self)
+                    result = self._transitions[action](source=self, action=action)
+                    if action and not action.result: action.result = result
+                    return result
                 else:
-                    return self._transitions[action]
-        elif action.result:
+                    result = self._transitions[action]
+                    if action and not action.result: action.result = result
+                    return result
+        elif action and action.result:
             return action.result
-        elif action.transform:
+        elif action and action.transform:
             return action.transform(source=self, action=action)
         else:
             raise KeyError(action)
@@ -536,5 +602,5 @@ class StateNode(CostNode[D], Generic[S, D], metaclass=ABCMeta):
     # Must override
 
     @abstractmethod
-    def _generate_actions(self) -> set:
+    def _generate_actions(self) -> list:
         pass

@@ -1,40 +1,149 @@
-from framework import ANode
+from typing import Generic, TypeVar
 
+from framework import ANode, N, CostNode, StateNode, Action
 
-class Searcher:
-    def __init__(self, method, start: ANode):
-        self.method = method
-        self.start = start
+D = TypeVar('D')
 
-        self.frontier = []
-        self.explored = set()
+class Searcher(Generic[D]):
+    #Uniform Cost Search
+    methods = ("BFS", "DFS", "DLS", "IDS")#, "BDS"
+    method_names = ("Breadth First Search", "Depth First Search", "Depth-limited Search",
+                    "Iterative Deepening Search")#, "Bidirectional Search"
 
-        self._add_to_frontier = self.frontier.append
-        self._get_frontier_size = self.frontier.__sizeof__
-        self._get_from_frontier = self.frontier.pop()
-        self._empty_explored = self.explored.clear
-        self._add_to_explored = self.explored.add
+    def __init__(self, method, start: D, is_graph: bool = False, uniform:bool = True, limit:N = None, increment:N = None, override:bool = False):
+        self.method: str = method
+        self.start: CostNode = start
+        self.is_graph: bool = is_graph
+        self.limit = limit
+        self.increment = increment
 
-    def _tree_search_(self) -> ANode:
+        self._limit = None
+        self._increment = None
+
+        self.trace = False
+        self.trace_functions = False
+        self.show_states = False
+        self.track_expansion = False
+
+        self.nonuniform = not uniform
+
+        if method == "BFS":
+            from collections import deque
+
+            self.frontier: deque = deque()
+            self.explored: set = set()
+
+            self._add_to_frontier = self.frontier.append
+            self._get_frontier_size = self.frontier.__len__
+            self._get_from_frontier = self.frontier.popleft
+            self._empty_explored = self.explored.clear
+            self._add_to_explored = self.explored.add
+        elif method in ["DFS", "DLS", "IDS"]:
+            self.frontier: list = []
+            self.explored: set = set()
+
+            self._add_to_frontier = self.frontier.append
+            self._get_frontier_size = self.frontier.__len__
+            self._get_from_frontier = self.frontier.pop
+            self._empty_explored = self.explored.clear
+            self._add_to_explored = self.explored.add
+        elif method == "BDS":
+            raise NotImplementedError("Bidirectional Search")
+
+        if method in ["DLS", "IDS"] or (override and limit): self._limit = limit
+        if method in ["IDS"] or (override and increment): self._increment = increment
+
+    def search(self) -> D:
+        if self.trace: print(f"Searcher.tree_search() @ " + self.start.describe())
+
+        if self.trace_functions:
+            print(f"\tself._add_to_frontier = {self._add_to_frontier}")
+            print(f"\tself._get_frontier_size = {self._get_frontier_size}")
+            print(f"\tself._get_from_frontier = {self._get_from_frontier}")
+            print(f"\tself._empty_explored = {self._empty_explored}")
+            print(f"\tself._add_to_explored = {self._add_to_explored}")
+
         self._add_to_frontier(self.start)
+        if self.is_graph: self._empty_explored()
 
         while self._get_frontier_size() > 0:
-            current = self._get_from_frontier()
-            if current.is_goal():
-                return current
-            else:
-                self._add_to_frontier(current.expand())
-        return False
+            current:StateNode = self._get_from_frontier()
 
-    def _graph_search_(self) -> ANode:
-        self._add_to_frontier(self.start)
-        self._empty_explored()
+            if self.trace_functions:
+                print(f"\tself._add_to_frontier = {self._add_to_frontier}")
+                print(f"\tself._get_frontier_size = {self._get_frontier_size}")
+                print(f"\tself._get_from_frontier = {self._get_from_frontier}")
+                print(f"\tself._empty_explored = {self._empty_explored}")
+                print(f"\tself._add_to_explored = {self._add_to_explored}")
 
-        while self._get_frontier_size() > 0:
-            current = self._get_from_frontier()
+            if self.trace: print(f"\n\tFrontier gives: " + current.describe())
+            if self.show_states:
+                #print(str(current.state))
+                for line in str(current.state).split('\n'): print("\t\t"+line)
+
             if current.is_goal():
+                if self.trace: print(f"\tGoal found!\n")
                 return current
-            else:
-                self._add_to_explored(current)
-                self._add_to_frontier(current.expand(self.explored))
-        return False
+            if self.is_graph: self._add_to_explored(current.state)
+
+            if (self._limit and current.cost < self._limit) or not self._limit:
+                if self.is_graph:
+                    expansion = current.expand(self.explored)
+                else:
+                    expansion = current.expand()
+
+                if self.nonuniform: expansion.sort()
+
+                if self.trace:
+                    print(f"\tExpansion gives {len(expansion)} new configurations, via:" )
+                    a: Action
+                    e: 'StateNode'
+                    action: Action
+                    actions = {e.action for e in expansion if e.action}
+                    if len(actions) == 0:
+                        actions = {a for a in current.actions() if (a.result and (a.result in expansion))}
+                    for action in actions:
+                        print("\t\t"+str(action))
+
+
+                if self.track_expansion:
+                    n = 1
+                    l = 0
+                    lines = []
+                    #print(f"\n")
+                    for node in expansion:
+                        l = 0
+                        for line in str(node.state).split('\n'):
+                            #print(line)
+                            if n == 1:
+                                lines.append("\t\t")
+                            elif len(expansion)*len(line) < 30:
+                                lines[l] += "\t\t"
+                            else:
+                                lines[l] += "\t"
+                            lines[l] += line
+                            #print(lines)
+                            l += 1
+                        n += 1
+                        # May need to pad for uneven states here
+                    for line in lines: print(line)
+                    #print('\n')
+
+
+
+                for e in expansion:
+
+                    self._add_to_frontier(e)
+
+            elif self.trace and self._limit:
+                print(f"\tLimit ({self._limit}) reached!")
+
+        if self._limit and self._increment:
+            self._limit += self._increment
+            if self.trace:
+                print(f"\tLimit increased to {self._limit}")
+                print("\n")
+            return self.search()
+
+        if self.trace: print("\n")
+        return None
