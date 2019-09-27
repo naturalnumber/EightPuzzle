@@ -3,6 +3,15 @@ from abc import ABCMeta, abstractmethod
 from collections import Iterable
 # from __future__ import annotations
 
+'''
+This whole thing is a bit much...
+To make the assignment interesting I decided to practice object hierarchies and inheritance,
+and potentially generate some code I could reuse later with Katis.
+The intent was to cut most of it out of the final submission, but I suddenly found myself quite busy.
+Nothing magical happens here, and other than maybe StateNode, none of these classes are particularly important
+for understanding the assignment submission.
+'''
+
 from typing import TypeVar, Callable, Generic, Any
 
 N = TypeVar('N', int, float)  # Number
@@ -425,6 +434,7 @@ class Action(Edge[D], AAction['Action', S]):
 
         self.transform = transform
 
+    # Helper method for debug information
     @staticmethod
     def _parse_transform(trans):
         tokens = str(trans).split(" ")
@@ -443,7 +453,7 @@ class Action(Edge[D], AAction['Action', S]):
 
         if self.source or self.cost != 1 or self.result: string += ":"
 
-        if self.transform:
+        if self.debug and self.transform:
             context_name, class_name, method_name = self._parse_transform(self.transform)
             string += " " + class_name + "." + method_name + "()"
         if self.source: string += " on " + self.source.describe()  ## Clean this name stuff up
@@ -541,6 +551,11 @@ class StateNode(CostNode[D], Generic[S, D], metaclass=ABCMeta):
         self._transitions = transitions
 
     def expand(self, ignore: Iterable = None) -> list:
+        """
+        Expands the current node.
+        :param ignore: An iterable collection of states to ignore.
+        :return: The list of expanded nodes
+        """
         if self.debug: print(f"StateNode.expand({ignore})")
         if not self._expanded:
             if ignore is not None:
@@ -554,6 +569,10 @@ class StateNode(CostNode[D], Generic[S, D], metaclass=ABCMeta):
         return self._children
 
     def actions(self) -> list:
+        """
+        Returns the list of valid actions that can be performed on this node.
+        :return: The list of valid actions
+        """
         if self.debug: print(f"StateNode.actions()")
         if not self._examined:
             if self.debug: print(f"\tExamining...")
@@ -574,13 +593,26 @@ class StateNode(CostNode[D], Generic[S, D], metaclass=ABCMeta):
         return self.state.__str__()
 
     def _generate_children(self) -> list:
+        """
+        Internal method that generates the children of this node.
+        The default implementation delegates to _generate_actions
+        :return: The list of children
+        """
         if self.debug: print(f"StateNode._generate_children()")
         return [self.transition(x) for x in self.actions()]
 
     def describe(self) -> str:
+        """
+        :return: A string description of the node
+        """
         return self.state.__str__()
 
     def transition(self, action: Action[S, D]) -> D:
+        """
+        A complicated method that links an action to a result by whichever means used by the subclass
+        :param action: The action being performed
+        :return: The resulting node
+        """
         if self.debug: print(f"StateNode.transition({action.name})")
         if self._transitions:
             if self._transitions[action]:
@@ -603,4 +635,8 @@ class StateNode(CostNode[D], Generic[S, D], metaclass=ABCMeta):
 
     @abstractmethod
     def _generate_actions(self) -> list:
+        """
+        This method must be overridden by any subclasses.
+        It must return a list of all valid actions that can be performed.
+        """
         pass
