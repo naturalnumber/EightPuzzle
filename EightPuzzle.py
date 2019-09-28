@@ -7,15 +7,17 @@ K = TypeVar('K', int, str)
 
 
 class EightPuzzle(CharGrid):
+    # Constants
     _gap_char = '0'
     _goal = "123456780"
-
     shifts: list
     shift_fns: dict
     deltas: dict
     shifts = ("up", "down", "right", "left")
     deltas = {"up":(-1, 0), "down":(1, 0), "right":(0, 1), "left":(0, -1)}
+    reverses = {"up":"down", "down":"up", "right":"left", "left":"right"}
 
+    # Instance variables
     _is_goal: bool
     _checked_goal: bool
 
@@ -67,7 +69,8 @@ class EightPuzzle(CharGrid):
             if self._checked_goal:
                 if self.is_goal():
                     self._description += " Goal!"
-                self._description += f" with {self._bad_tiles} tiles off by {self._disorder} total"
+                else:
+                    self._description += f" with {self._bad_tiles} tiles off by {self._disorder} total"
         return self._description
 
     # Checks possibility of shift
@@ -171,6 +174,23 @@ class EightPuzzle(CharGrid):
             return self._is_goal
         else:
             return self._check_goal()
+
+    def _generate_actions(self) -> list:
+        """
+        Internal method for generating a list of valid actions.
+        :return: A list of valid actions
+        """
+        # Debug output
+        if self.debug: print(f"EightPuzzle._generate_actions()")
+        action_set = []
+
+        # Check every shift
+        for shift in self.shifts:
+            if self.can_shift(shift):
+                action_set.append(Action(shift, transform=self.shift_fns[shift], argument=self, reversible=True,
+                                         reverse=self.reverses[shift]))
+
+        return action_set
 
     @staticmethod
     def generate_tiles(rows: int, cols: int) -> str:

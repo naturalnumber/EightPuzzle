@@ -1,23 +1,13 @@
+from EightPuzzle import EightPuzzle
 from PuzzleNode import PuzzleNode
 from Searcher import Searcher
-
-
-def is_puzzle(term: str):
-    if not isinstance(term, str) or len(term) != 9:
-        return False
-    if len(term.translate({ord(i):None for i in '012345678'})) != 0:
-        return False
-    for c in '012345678':
-        if c not in term:
-            return False
-    return True
-
 
 class Assignment:
     booleans = {"no" :(False, ["0", "n", "nope", "nah", "never", "false", "f"]),
                 "yes":(True, ["1", "y", "definitely", "sure", "yep", "yeah", "true", "t"])}
     difficulties = {"simple"  :(0, ["basic", "0"]), "easy":(1, ["not hard", "not too easy", "1"]),
                     "moderate":(2, ["not too hard", "medium", "not easy", "2"]), "difficult":(3, ["hard", "3"]),
+                    "extreme" :(4, ["very hard", "4"]), "imposable":(5, ["5"]),
                     "random"  :(-1, ["make one up", "choose one", "choose one at random", "rand", "-1"])}
     methods = {"bfs"   :(0, ["breadth first search", "breadth first", "bf", "0"]),
                "dfs"   :(1, ["depth first search", "depth first", "1"]),
@@ -29,7 +19,7 @@ class Assignment:
                "debug" :(4, ["even more", "4"]),
                "random":(-1, ["choose one", "choose one at random", "rand", "-1"])}
 
-    help_texts = {"dif"   :"Valid difficulties are 0-3, random, a puzzle sequence, simple, easy, moderate, ...",
+    help_texts = {"dif"   :"Valid difficulties are 0-5, random, a puzzle sequence, simple, easy, moderate, ...",
                   "y/n"   :"Valid choices are yes and no.",
                   "search":"Valid choices are: random, BFS (Breadth First Search), DFS (Depth First Search), DLS (Depth-limited Search), IDS (Iterative Deepening Search)",
                   "detail":"Valid choices are: random, none, low, medium, and high",
@@ -56,6 +46,11 @@ class Assignment:
     @staticmethod
     def start():
         print("Welcome to Allan's CS-4110 Assignment 1")
+        print("You may request help at any time by typing 'help' and you may exit by typing 'exit'")
+        print("The interactive menu also recognizes many common synonyms, so guessing should work well.")
+        print("(P.S. I meant to get to bidirectional search, but only managed the other 4.)")
+        print(
+            "(P.P.S. There is a weird bug that seems to occur sometimes after failed solutions, where the algorithms (new objects) will continue to fail. It is likely a small typo somewhere in the menu system but I have yet to track it down.)")
 
         while True:
             Assignment.initial_state = Assignment.choose_initial_state()
@@ -91,6 +86,7 @@ class Assignment:
             if Assignment.output_detail > 3:
                 Assignment.searcher.trace_functions = True
 
+            # Enable to step through node by node
             # Assignment.searcher.step_through = True
 
             print("Beginning search...")
@@ -174,7 +170,7 @@ class Assignment:
 
     @staticmethod
     def choose_initial_state():
-        pre_made = ["123406758", "130426758", "136742580", "713546820"]
+        pre_made = ["123406758", "130426758", "136742580", "713546820", "012345678", "201867354"]
 
         if Assignment.initial_state is not None:
             print(
@@ -199,7 +195,7 @@ class Assignment:
                 continue
 
             if not success:
-                if is_puzzle(term):
+                if EightPuzzle.is_puzzle(term):
                     print("Using given initial configuration: " + term)
                     return term
                 else:
@@ -224,7 +220,7 @@ class Assignment:
         types = Searcher.methods
         long_types = Searcher.method_names
 
-        if Assignment.search_type is not None:
+        if Assignment.search_type is not None and Assignment.search_type in types:
             print("Last initial search used was: " + long_types[
                 types.index(Assignment.search_type)] + ". Would you like to use it again?")
             if Assignment.read_boolean("Would you like to use it again?"):

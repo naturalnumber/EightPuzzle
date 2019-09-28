@@ -32,10 +32,8 @@ class PuzzleNode(StateNode['PuzzleNode', EightPuzzle]):
         :param rows: The number of rows, defaults to 3
         :param cols: The number of columns, defaults to 3
         """
-        # The shift function references
-        self.shift_fns = {"up":self.shift_up, "down":self.shift_down, "right":self.shift_right, "left":self.shift_left}
 
-        # Ggenerates a tile set if none were provided
+        # Generates a tile set if none were provided
         if not tiles:
             tiles = EightPuzzle.generate_tiles(rows, cols)
 
@@ -70,6 +68,45 @@ class PuzzleNode(StateNode['PuzzleNode', EightPuzzle]):
                 self._description += f" after {self.cost} steps"
         return self._description
 
+    # Override operator
+    def __getitem__(self, key: Any):
+        if isinstance(key, int):
+            key: int
+            return self.state.get_row(key)
+        if isinstance(key, tuple):
+            key: tuple
+            if len(key) == 2:
+                return self.state.get(*key)
+        return super().__getitem__(key)
+
+    def get_cost(self, action: Action) -> N:
+        return self.action_cost
+
+    def _successor(self, state: S, action: Action, *args, **kwargs) -> D:
+        return PuzzleNode(state, self, self.cost + self.action_cost, action, self._rows, self._cols)
+
+
+'''
+
+    def _generate_actions(self) -> list:
+        """
+        Internal method for generating a list of valid actions.
+        :return: A list of valid actions
+        """
+        # Debug output
+        if self.debug: print(f"PuzzleNode._generate_actions()")
+        action_set = self.state.actions()
+
+        # Check every shift
+        for shift in self.state.shifts:
+            if self.state.can_shift(shift):
+                action_set.append(Action(shift, transform=self.shift_fns[shift], source=self, reversible=True))
+
+        return action_set
+        
+        # The shift function references
+        self.shift_fns = {"up":self.shift_up, "down":self.shift_down, "right":self.shift_right, "left":self.shift_left}
+        
     def shift(self, key: K, action: Action = None, *args, **kwargs) -> 'PuzzleNode':
         """
         Performs a given transformation
@@ -108,30 +145,4 @@ class PuzzleNode(StateNode['PuzzleNode', EightPuzzle]):
 
     def shift_left(self, action: Action = None, *args, **kwargs) -> 'PuzzleNode':
         return self.shift("left", action, *args, **kwargs)
-
-    def _generate_actions(self) -> list:
-        """
-        Internal method for generating a list of valid actions.
-        :return: A list of valid actions
-        """
-        # Debug output
-        if self.debug: print(f"PuzzleNode._generate_actions()")
-        action_set = []
-
-        # Check every shift
-        for shift in self.state.shifts:
-            if self.state.can_shift(shift):
-                action_set.append(Action(shift, transform=self.shift_fns[shift], source=self))
-
-        return action_set
-
-    # Override operator
-    def __getitem__(self, key: Any):
-        if isinstance(key, int):
-            key: int
-            return self.state.get_row(key)
-        if isinstance(key, tuple):
-            key: tuple
-            if len(key) == 2:
-                return self.state.get(*key)
-        return super().__getitem__(key)
+'''

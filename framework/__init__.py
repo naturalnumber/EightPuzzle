@@ -1,6 +1,7 @@
 import math
 from abc import ABCMeta, abstractmethod
 from collections import Iterable
+
 # from __future__ import annotations
 
 '''
@@ -18,6 +19,8 @@ N = TypeVar('N', int, float)  # Number
 
 A = TypeVar('A')  # Action
 
+E = TypeVar('E')  # Edge
+
 D = TypeVar('D')  # Node
 
 S = TypeVar('S')  # State
@@ -32,8 +35,14 @@ def _order(i: int, j: int) -> tuple:
     else: return j, i
 
 
-class AState(Generic[S, C], metaclass=ABCMeta):
+class AState(Generic[S, C, A], metaclass=ABCMeta):
     debug: bool = False
+    _actions: list = None
+    _examined: bool = False
+    _results: dict = None
+
+    def __init__(self, results: dict = None):
+        self._results = results
 
     @abstractmethod
     def __lt__(self, other) -> bool:
@@ -79,17 +88,73 @@ class AState(Generic[S, C], metaclass=ABCMeta):
     def is_goal(self) -> bool:
         pass
 
+    def actions(self) -> list:
+        """
+        Returns the list of valid actions that can be performed on this node.
+        :return: The list of valid actions
+        """
+        if self.debug: print(f"AState.actions()")
+        if not self._examined:
+            if self.debug: print(f"\tExamining...")
+            self._actions = self._generate_actions()
+            self._examined = True
+        return self._actions
+
+    def result(self, action: A) -> S:
+        """
+        A complicated method that links an action to a result by whichever means used by the subclass
+        :param action: The action being performed
+        :return: The resulting state
+        """
+        if self.debug: print(f"AState.transition({action.name})")
+        if self._results:
+            if self._results[action]:
+                if callable(self._results[action]):
+                    output = self._results[action](argument=self, action=action)
+                    if action and not action.output: action.output = output
+                    return output
+                else:
+                    output = self._results[action]
+                    if action and not action.output: action.output = output
+                    return output
+        elif action and action.result:
+            return action.result
+        elif action and action.transform:
+            return action.transform(argument=self, action=action)
+        else:
+            raise KeyError(action)
+
+    # Must override
+
+    @abstractmethod
+    def _generate_actions(self) -> list:
+        """
+        This method must be overridden by any subclasses.
+        It must return a list of all valid actions that can be performed.
+        """
+        pass
+
 
 class AAction(Generic[A, S], metaclass=ABCMeta):
     debug: bool = False
+    name: str
+    argument: S = None
+    output: S = None
+    transform: Callable = None
+    reversible: bool
+    reverse: str
 
     @abstractmethod
     def __str__(self) -> str:
         pass
 
 
-class AEdge(Generic[D], metaclass=ABCMeta):
+class AEdge(Generic[E, D], metaclass=ABCMeta):
     debug: bool = False
+    cost: N
+    source: D
+    result: D
+    reversible: bool
 
     @abstractmethod
     def __str__(self) -> str:
@@ -132,11 +197,12 @@ class AEdge(Generic[D], metaclass=ABCMeta):
         pass
 
 
-class ANode(Generic[D], metaclass=ABCMeta):
+class ANode(Generic[E, D], metaclass=ABCMeta):
     debug: bool = False
     parent: D
+    _edges: list = None
 
-    def __init__(self, parent: D = False):
+    def __init__(self, parent: D = None):
         self.parent = parent
 
     @abstractmethod
@@ -196,10 +262,11 @@ class ANode(Generic[D], metaclass=ABCMeta):
         pass
 
 
-class DelegatingState(AState[S, C]):
+class DelegatingState(AState[S, C, A], metaclass=ABCMeta):
     configuration: C
 
-    def __init__(self, configuration: C, *args, **kwargs):
+    def __init__(self, configuration: C, results: dict = None, *args, **kwargs):
+        super().__init__(results)
         self.configuration = configuration
 
     def __str__(self) -> str:
@@ -246,11 +313,11 @@ class DelegatingState(AState[S, C]):
         return hash(self.configuration)
 
 
-class StringState(DelegatingState[S, str]):
+class StringState(DelegatingState[S, str, A], metaclass=ABCMeta):
     marked: int
 
-    def __init__(self, configuration: str, marked: int = None, *args, **kwargs):
-        super().__init__(configuration)
+    def __init__(self, configuration: str, marked: int = None, results: dict = None, *args, **kwargs):
+        super().__init__(configuration, results)
         self.marked = marked
 
     def __str__(self) -> str:
@@ -289,14 +356,15 @@ class StringState(DelegatingState[S, str]):
 IntPair = TypeVar('IntPair', int, tuple)
 
 
-class CharGrid(StringState[S]):
+class CharGrid(StringState[S, A], metaclass=ABCMeta):
     _rows: int
     _cols: int
 
     gap: tuple
 
-    def __init__(self, configuration: str, rows: int = 0, cols: int = 0, marked: int = None, *args, **kwargs):
-        super().__init__(configuration, marked)
+    def __init__(self, configuration: str, rows: int = 0, cols: int = 0, marked: int = None, results: dict = None,
+                 *args, **kwargs):
+        super().__init__(configuration, marked, results)
 
         if rows > 0 and cols > 0 and len(configuration) == rows * cols:
             self._rows = rows
@@ -373,10 +441,7 @@ class CharGrid(StringState[S]):
         return super().swap(i, j)
 
 
-class Edge(AEdge[D]):
-    cost: N
-    source: D
-    result: D
+class Edge(AEdge[E, D], metaclass=ABCMeta):
 
     def __init__(self, cost: N = 1, source: D = None, result: D = None, reversible: bool = False, *args, **kwargs):
         self.cost = cost
@@ -436,14 +501,17 @@ class Edge(AEdge[D]):
         return hash((self.cost, self.source, self.result, self.reversible))
 
 
-class Action(Edge[D], AAction['Action', S]):
-    name: str
-    transform: Callable  # further hints
+class Action(Edge['Action', D], AAction['Action', S]):
 
-    def __init__(self, name: str, cost: N = 1, transform: Callable = None, source: D = None, result: D = None,
-                 reversible: bool = False, *args, **kwargs):
+    def __init__(self, name: str, cost: N = 1, transform: Callable = None, argument: S = None, output: S = None,
+                 source: D = None, result: D = None,
+                 reversible: bool = False, reverse: str = None, *args, **kwargs):
         super().__init__(cost=cost, source=source, result=result)
         self.name = name
+        self.argument = argument
+        self.output = output
+        self.reversible = reversible
+        self.reverse = reverse
 
         # if result and transform: raise AttributeError(transform, result)
 
@@ -487,7 +555,7 @@ class Action(Edge[D], AAction['Action', S]):
         return hash(self.name)
 
 
-class CostNode(ANode[D], metaclass=ABCMeta):
+class CostNode(ANode[E, D], metaclass=ABCMeta):
     cost: N
     _edges: list
     _children: list
@@ -545,17 +613,16 @@ class CostNode(ANode[D], metaclass=ABCMeta):
         return self.cost >= float(other)
 
     def __getitem__(self, key: Action[S, D]):
-        if isinstance(key, Action): return self.transition(key)
         return None
 
     def __hash__(self):
         return hash((self.parent, self.action, self.cost))
 
 
-class StateNode(CostNode[D], Generic[S, D], metaclass=ABCMeta):
-    action: Action[S, D]
+class StateNode(CostNode['Action', D], Generic[S, D], metaclass=ABCMeta):
+    action: Action[D, S]
     state: S
-    _transitions: dict  # Further type hints?
+    _transitions: dict
 
     def __init__(self, state: S, parent: D = None, edge: Action[S, D] = None, cost: N = 0,
                  transitions: dict = None, *args, **kwargs):
@@ -575,7 +642,7 @@ class StateNode(CostNode[D], Generic[S, D], metaclass=ABCMeta):
         if not self._expanded:
             if ignore is not None:
                 if self.debug: print(f"\tExpanding without {ignore}")
-                x:D
+                x: D
                 self._children = [x for x in self._generate_children() if x.state not in ignore]
             else:
                 if self.debug: print(f"\tExpanding...")
@@ -591,7 +658,11 @@ class StateNode(CostNode[D], Generic[S, D], metaclass=ABCMeta):
         if self.debug: print(f"StateNode.actions()")
         if not self._examined:
             if self.debug: print(f"\tExamining...")
-            self._edges = self._generate_actions()
+            self._edges = self.state.actions()
+            for e in self._edges:
+                e: Action
+                e.source = self
+                e.cost = self.get_cost(e)
             self._examined = True
         return self._edges
 
@@ -601,7 +672,8 @@ class StateNode(CostNode[D], Generic[S, D], metaclass=ABCMeta):
     # May need to override
 
     def __getitem__(self, key: Any):
-        if isinstance(key, Action): return super().__getitem__(key)
+        # if isinstance(key, Action): return super().__getitem__(key)
+        if isinstance(key, Action): return self.transition(key)
         return self.state.__getitem__(key)
 
     def __str__(self) -> str:
@@ -620,9 +692,9 @@ class StateNode(CostNode[D], Generic[S, D], metaclass=ABCMeta):
         """
         :return: A string description of the node
         """
-        return self.state.__str__()
+        return self.state.describe()
 
-    def transition(self, action: Action[S, D]) -> D:
+    def transition(self, action: Action) -> D:
         """
         A complicated method that links an action to a result by whichever means used by the subclass
         :param action: The action being performed
@@ -642,16 +714,45 @@ class StateNode(CostNode[D], Generic[S, D], metaclass=ABCMeta):
         elif action and action.result:
             return action.result
         elif action and action.transform:
-            return action.transform(source=self, action=action)
+            return self._successor(action.transform(source=self, action=action), action)
         else:
             raise KeyError(action)
 
     # Must override
 
     @abstractmethod
-    def _generate_actions(self) -> list:
+    def get_cost(self, action: Action) -> N:
         """
         This method must be overridden by any subclasses.
         It must return a list of all valid actions that can be performed.
         """
         pass
+
+    @abstractmethod
+    def _successor(self, state: S, action: Action, *args, **kwargs) -> D:
+        """
+        This method must be overridden by any subclasses.
+        It must return a successor based on the new state provided
+        """
+        pass
+
+
+'''
+        if self.debug: print(f"StateNode.transition({action.name})")
+        if self._transitions:
+            if self._transitions[action]:
+                if callable(self._transitions[action]):
+                    result = self._transitions[action](source=self, action=action)
+                    if action and not action.result: action.result = result
+                    return result
+                else:
+                    result = self._transitions[action]
+                    if action and not action.result: action.result = result
+                    return result
+        elif action and action.result:
+            return action.result
+        elif action and action.transform:
+            return action.transform(source=self, action=action)
+        else:
+            raise KeyError(action)
+'''

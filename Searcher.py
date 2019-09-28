@@ -150,17 +150,20 @@ class Searcher(Generic[D]):
 
                 # Optional output
                 if self.trace:
-                    print(f"\tExpansion gives {len(expansion)} new configurations, via:")
-                    a: Action
-                    e: 'StateNode'
-                    action: Action
-                    actions = {e.action for e in expansion if e.action}
-                    if len(actions) == 0:
-                        actions = {a for a in current.actions() if (a.result and (a.result in expansion))}
-                    for action in actions:
-                        print("\t\t" + str(action))
+                    if len(expansion) > 0:
+                        print(f"\tExpansion gives {len(expansion)} new configurations, via:")
+                        a: Action
+                        e: 'StateNode'
+                        action: Action
+                        actions = {e.action for e in expansion if e.action}
+                        if len(actions) == 0:
+                            actions = {a for a in current.actions() if (a.result and (a.result in expansion))}
+                        for action in actions:
+                            print("\t\t" + str(action))
+                    else:
+                        print(f"\tExpansion gives no new configurations.")
 
-                if self.track_expansion:
+                if self.track_expansion and len(expansion) > 0:
                     n = 1
                     l = 0
                     lines = []
