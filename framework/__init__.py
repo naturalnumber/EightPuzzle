@@ -71,6 +71,14 @@ class AState(Generic[S, C], metaclass=ABCMeta):
     def __hash__(self):
         pass
 
+    @abstractmethod
+    def describe(self) -> str:
+        pass
+
+    @abstractmethod
+    def is_goal(self) -> bool:
+        pass
+
 
 class AAction(Generic[A, S], metaclass=ABCMeta):
     debug: bool = False
@@ -187,10 +195,6 @@ class ANode(Generic[D], metaclass=ABCMeta):
     def transition(self, action):
         pass
 
-    @abstractmethod
-    def is_goal(self) -> bool:
-        pass
-
 
 class DelegatingState(AState[S, C]):
     configuration: C
@@ -274,6 +278,13 @@ class StringState(DelegatingState[S, str]):
         return self.configuration[:min_i] + self.configuration[max_i] + self.configuration[min_i + 1:max_i] \
                + self.configuration[min_i] + self.configuration[max_i + 1:]
 
+    @staticmethod
+    def shuffle_string(tiles: str) -> str:
+        import random
+        l = list(tiles)
+        random.shuffle(l)
+        return ''.join(l)
+
 
 IntPair = TypeVar('IntPair', int, tuple)
 
@@ -281,6 +292,8 @@ IntPair = TypeVar('IntPair', int, tuple)
 class CharGrid(StringState[S]):
     _rows: int
     _cols: int
+
+    gap: tuple
 
     def __init__(self, configuration: str, rows: int = 0, cols: int = 0, marked: int = None, *args, **kwargs):
         super().__init__(configuration, marked)
@@ -303,6 +316,8 @@ class CharGrid(StringState[S]):
 
         else:
             raise AttributeError(configuration, rows, cols)
+
+        self.gap = self.coord(self.marked)
 
     def __getitem__(self, key):
         if isinstance(key, tuple) and len(key) == 2:

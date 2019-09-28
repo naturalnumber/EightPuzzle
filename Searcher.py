@@ -40,6 +40,8 @@ class Searcher(Generic[D]):
 
         # Advanced option flags/variables
         self.track_complexity = False
+        self.nodes_seen = 0
+        self.nodes_created = 0
 
         self.debug = False
 
@@ -50,7 +52,6 @@ class Searcher(Generic[D]):
 
         self.step_through = False
 
-        self.nodes_seen = 0
 
         # Method initializations
         if method == "BFS":
@@ -130,7 +131,7 @@ class Searcher(Generic[D]):
                 for line in str(current.state).split('\n'): print("\t\t" + line)
 
             # Goal checking
-            if current.is_goal():
+            if current.state.is_goal():
                 if self.trace: print(f"\tGoal found!\n")
                 return current
 
@@ -185,6 +186,9 @@ class Searcher(Generic[D]):
                 # Add expansion to frontier
                 for e in expansion:
                     self._add_to_frontier(e)
+
+                    # Advanced statistics
+                    if self.track_complexity: self.nodes_created += 1
 
             # Optional output
             elif self.trace and self._limit:

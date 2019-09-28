@@ -1,4 +1,4 @@
-from EightPuzzle import Puzzle
+from PuzzleNode import PuzzleNode
 from Searcher import Searcher
 
 
@@ -62,26 +62,27 @@ class Assignment:
             Assignment.search_type = Assignment.choose_search_type()
             Assignment.output_detail = Assignment.choose_output_detail()
 
-            initial = Puzzle(Assignment.initial_state)
+            initial = PuzzleNode(Assignment.initial_state)
 
             if Assignment.search_type in ["BFS", "DFS"]:
-                Assignment.searcher = Searcher[Puzzle](Assignment.search_type, initial, Assignment.is_graph)
+                Assignment.searcher = Searcher[PuzzleNode](Assignment.search_type, initial, Assignment.is_graph)
             elif Assignment.search_type in ["DLS", "IDS"]:
                 Assignment.search_depth = Assignment.choose_search_depth()
 
                 if Assignment.search_type in ["IDS"]:
                     Assignment.search_increment = Assignment.choose_depth_increment()
-                    Assignment.searcher = Searcher[Puzzle](Assignment.search_type, initial, Assignment.is_graph,
-                                                           limit=Assignment.search_depth,
-                                                           increment=Assignment.search_increment)
+                    Assignment.searcher = Searcher[PuzzleNode](Assignment.search_type, initial, Assignment.is_graph,
+                                                               limit=Assignment.search_depth,
+                                                               increment=Assignment.search_increment)
                 else:
-                    Assignment.searcher = Searcher[Puzzle](Assignment.search_type, initial, Assignment.is_graph,
-                                                           limit=Assignment.search_depth)
+                    Assignment.searcher = Searcher[PuzzleNode](Assignment.search_type, initial, Assignment.is_graph,
+                                                               limit=Assignment.search_depth)
 
             if Assignment.output_detail > 0:
                 Assignment.searcher.trace = True
 
             if Assignment.output_detail > 1:
+                Assignment.searcher.track_complexity = True
                 Assignment.searcher.show_states = True
 
             if Assignment.output_detail > 2:
@@ -93,15 +94,27 @@ class Assignment:
             # Assignment.searcher.step_through = True
 
             print("Beginning search...")
-            solution: Puzzle = Assignment.searcher.search()
+            solution: PuzzleNode = Assignment.searcher.search()
 
             print()
             if solution is not None:
                 print("The goal found is " + solution.describe())
                 print(solution.state)
-                print("The goal was reached in " + str(solution.cost) + " steps.")
+                print(f"The goal was reached in {solution.cost} steps.")
+                if Assignment.searcher.track_complexity:
+                    print(
+                        f"A total of {Assignment.searcher.nodes_seen} nodes were seen and {Assignment.searcher.nodes_created} created.")
+                    print(f"The total final size of the frontier was {len(Assignment.searcher.frontier)}.")
+                    if Assignment.searcher.is_graph:
+                        print(f"The total final size of the explored set was {len(Assignment.searcher.explored)}.")
             else:
                 print("No solution was found...")
+                if Assignment.searcher.track_complexity:
+                    print(
+                        f"A total of {Assignment.searcher.nodes_seen} nodes were seen and {Assignment.searcher.nodes_created} created.")
+                    print(f"The total final size of the frontier was {len(Assignment.searcher.frontier)}.")
+                    if Assignment.searcher.is_graph:
+                        print(f"The total final size of the explored set was {len(Assignment.searcher.explored)}.")
 
 
             print()
